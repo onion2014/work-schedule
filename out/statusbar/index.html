@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>Status Bar</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: transparent;
+      font-family: "Segoe UI", "Microsoft YaHei", -apple-system, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    #statusbar {
+      width: 100%;
+      height: 100%;
+      background: rgba(24, 24, 28, 0.88);
+      display: flex;
+      align-items: center;
+      overflow: hidden;
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+
+    #statusbar:hover {
+      background: rgba(40, 40, 48, 0.92);
+    }
+
+    #label {
+      padding: 0 10px;
+      color: rgba(255, 255, 255, 0.55);
+      font-size: 12px;
+      white-space: nowrap;
+      flex-shrink: 0;
+      z-index: 1;
+    }
+
+    #divider {
+      color: rgba(255, 255, 255, 0.3);
+      font-size: 12px;
+      flex-shrink: 0;
+      margin-right: 6px;
+    }
+
+    #marquee-wrapper {
+      flex: 1;
+      overflow: hidden;
+      position: relative;
+      height: 100%;
+      display: flex;
+      align-items: center;
+    }
+
+    #marquee-content {
+      display: inline-block;
+      white-space: nowrap;
+      color: rgba(255, 255, 255, 0.9);
+      font-size: 12px;
+      position: absolute;
+      animation: none;
+    }
+
+    #marquee-content.scrolling {
+      animation: marquee var(--scroll-duration, 20s) linear infinite;
+    }
+
+    #marquee-content.static {
+      position: relative;
+    }
+
+    #no-pending {
+      color: rgba(255, 255, 255, 0.4);
+      font-size: 12px;
+      padding: 0 4px;
+    }
+
+    @keyframes marquee {
+      0% { transform: translateX(0); }
+      100% { transform: translateX(-50%); }
+    }
+  </style>
+</head>
+<body>
+  <div id="statusbar">
+    <span id="label"></span>
+    <span id="divider">·</span>
+    <div id="marquee-wrapper">
+      <span id="marquee-content"></span>
+      <span id="no-pending"></span>
+    </div>
+  </div>
+
+  <script>
+    const labelEl = document.getElementById('label')
+    const contentEl = document.getElementById('marquee-content')
+    const noPendingEl = document.getElementById('no-pending')
+    const wrapperEl = document.getElementById('marquee-wrapper')
+    const statusBarEl = document.getElementById('statusbar')
+
+    // Access the preload-exposed API
+    const api = window.statusbarApi || {
+      onUpdate: (cb) => { /* fallback: no IPC */ },
+      onClick: () => { /* fallback: no IPC */ }
+    }
+
+    // Register update listener
+    api.onUpdate((data) => {
+      const { label, items, summary } = data
+
+      // Update label
+      labelEl.textContent = label
+
+      if (!items || items.length === 0) {
+        // No pending items — show static text
+        contentEl.style.display = 'none'
+        contentEl.classList.remove('scrolling')
+        noPendingEl.style.display = 'inline'
+        noPendingEl.textContent = summary || '无待办'
+        return
+      }
+
+      // Build marquee text: concatenate all items
+      const text = items.map(item => `${item.time} ${item.title}`).join('  ·  ')
+      noPendingEl.style.display = 'none'
+      contentEl.style.display = 'inline-block'
+
+      // Duplicate the text to create seamless looping
+      // We need to measure the text width vs wrapper width to decide animation
+      contentEl.textContent = text + '  ·  ' + text
+      contentEl.classList.remove('scrolling')
+      contentEl.classList.add('static')
+
+      // Force layout to measure widths
+      const textWidth = contentEl.scrollWidth
+      const wrapperWidth = wrapperEl.clientWidth
+
+      // Reset to single text for display
+      contentEl.textContent = text + '  ·  ' + text
+
+      // If text is wider than wrapper, use scrolling animation
+      const halfTextWidth = textWidth / 2 // because we duplicated
+      if (halfTextWidth > wrapperWidth) {
+        // Calculate duration based on text length for natural scrolling speed
+        const duration = Math.max(10, halfTextWidth / 30) // ~30px per second
+        contentEl.style.setProperty('--scroll-duration', duration + 's')
+        contentEl.classList.remove('static')
+        contentEl.classList.add('scrolling')
+        // Reset animation by toggling class
+        void contentEl.offsetWidth // force reflow
+        contentEl.classList.add('scrolling')
+      } else {
+        // Text fits — show statically centered
+        contentEl.classList.remove('scrolling')
+        contentEl.classList.add('static')
+      }
+    })
+
+    // Click opens main window
+    statusBarEl.addEventListener('click', () => {
+      api.onClick()
+    })
+  </script>
+</body>
+</html>

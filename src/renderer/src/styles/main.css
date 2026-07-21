@@ -1,0 +1,44 @@
+/* ===== Timer Calendar — Global Styles ===== */
+
+:root {
+  --color-primary: #5B7FFF;
+  --color-primary-hover: #4A6DE0;
+  --color-bg: #F7F8FA;
+  --color-text: #2C2C2E;
+  --color-text-secondary: #8E8E93;
+  --color-border: #E5E7EB;
+  --color-danger: #EF4444;
+  --color-success: #34C759;
+  --radius: 6px;
+  --transition: 0.12s ease;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body, #app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Microsoft YaHei", "PingFang SC", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  color: var(--color-text);
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: #C7C7CC;
+  border-radius: var(--radius);
+}
