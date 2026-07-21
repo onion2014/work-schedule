@@ -60,7 +60,7 @@
 ## 目录结构
 
 ```
-timer/
+work-schedule/
 ├── src/
 │   ├── main/          # Electron 主进程
 │   │   ├── index.ts       # 入口：窗口、托盘、任务栏滚动
