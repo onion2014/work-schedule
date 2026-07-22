@@ -45,6 +45,7 @@ const overflowCount = computed(() => props.occurrences.length - MAX_VISIBLE)
 
 <style scoped>
 .day-cell {
+  width: 120px;
   min-height: 76px;
   padding: 4px 6px;
   border-radius: var(--radius);

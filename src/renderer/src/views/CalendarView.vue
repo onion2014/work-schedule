@@ -737,6 +737,9 @@ watch(currentDate, loadData)
 .ev-title {
   font-size: 14px;
   flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ev-progress {
