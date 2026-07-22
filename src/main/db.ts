@@ -52,15 +52,18 @@ export function reopenDatabase(): void {
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
       description TEXT,
-      startDate TEXT NOT NULL,
-      startTime TEXT,
-      endDate TEXT,
-      endTime TEXT,
+      receivedDate TEXT NOT NULL,
+      receivedTime TEXT NOT NULL,
+      taskStartDate TEXT NOT NULL,
+      taskStartTime TEXT NOT NULL,
+      taskEndDate TEXT,
+      taskEndTime TEXT,
       recurrence TEXT,
       lunarAnchor TEXT,
       color TEXT NOT NULL DEFAULT '#4A90D9',
       category TEXT,
       completedDates TEXT DEFAULT '[]',
+      progress INTEGER NOT NULL DEFAULT 0,
       createdAt TEXT NOT NULL,
       updatedAt TEXT NOT NULL
     )
@@ -105,21 +108,75 @@ export async function initDatabase(): Promise<void> {
   // Enable WAL mode for better concurrent read performance
   db.pragma('journal_mode = WAL')
 
-  // Create tables if they don't exist
+  // Check if old schema (startDate column) needs migration
+  const columns = db.prepare("PRAGMA table_info(events)").all() as any[]
+  const hasOldSchema = columns.some(c => c.name === 'startDate')
+
+  if (hasOldSchema) {
+    console.log('Migrating event schema: startDate/startTime → receivedDate/receivedTime + taskStartDate/taskStartTime + taskEndDate/taskEndTime + progress')
+    db.exec(`
+      CREATE TABLE events_new (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        description TEXT,
+        receivedDate TEXT NOT NULL,
+        receivedTime TEXT NOT NULL,
+        taskStartDate TEXT NOT NULL,
+        taskStartTime TEXT NOT NULL,
+        taskEndDate TEXT,
+        taskEndTime TEXT,
+        recurrence TEXT,
+        lunarAnchor TEXT,
+        color TEXT NOT NULL DEFAULT '#4A90D9',
+        category TEXT,
+        completedDates TEXT DEFAULT '[]',
+        progress INTEGER NOT NULL DEFAULT 0,
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL
+      )
+    `)
+    // Copy+map data: startDate → receivedDate AND taskStartDate; startTime → receivedTime AND taskStartTime (NULL→'09:00')
+    db.exec(`
+      INSERT INTO events_new
+        (id, title, description, receivedDate, receivedTime, taskStartDate, taskStartTime,
+         taskEndDate, taskEndTime, recurrence, lunarAnchor, color, category, completedDates,
+         progress, createdAt, updatedAt)
+      SELECT
+        id, title, description,
+        startDate,
+        COALESCE(startTime, '09:00'),
+        startDate,
+        COALESCE(startTime, '09:00'),
+        endDate,
+        endTime,
+        recurrence, lunarAnchor, color, category, completedDates,
+        0,
+        createdAt, updatedAt
+      FROM events
+    `)
+    db.exec('DROP TABLE events')
+    db.exec('ALTER TABLE events_new RENAME TO events')
+    console.log('Event schema migration complete.')
+  }
+
+  // Create tables if they don't exist (harmless after migration)
   db.exec(`
     CREATE TABLE IF NOT EXISTS events (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
       description TEXT,
-      startDate TEXT NOT NULL,
-      startTime TEXT,
-      endDate TEXT,
-      endTime TEXT,
+      receivedDate TEXT NOT NULL,
+      receivedTime TEXT NOT NULL,
+      taskStartDate TEXT NOT NULL,
+      taskStartTime TEXT NOT NULL,
+      taskEndDate TEXT,
+      taskEndTime TEXT,
       recurrence TEXT,
       lunarAnchor TEXT,
       color TEXT NOT NULL DEFAULT '#4A90D9',
       category TEXT,
       completedDates TEXT DEFAULT '[]',
+      progress INTEGER NOT NULL DEFAULT 0,
       createdAt TEXT NOT NULL,
       updatedAt TEXT NOT NULL
     )
@@ -163,10 +220,10 @@ export function queryAllEvents(): any[] {
   }))
 }
 
-/** Query events whose start date falls in a range */
+/** Query events whose received date falls in a range */
 export function queryEventsByRange(rangeStart: string, rangeEnd: string): any[] {
   return queryAllEvents().filter(ev =>
-    ev.startDate >= rangeStart && ev.startDate <= rangeEnd
+    ev.receivedDate >= rangeStart && ev.receivedDate <= rangeEnd
   )
 }
 
@@ -174,29 +231,36 @@ export function queryEventsByRange(rangeStart: string, rangeEnd: string): any[] 
 export function createEvent(input: {
   title: string
   description?: string
-  startDate: string
-  startTime?: string
-  endDate?: string
-  endTime?: string
+  receivedDate: string
+  receivedTime: string
+  taskStartDate: string
+  taskStartTime: string
+  taskEndDate?: string
+  taskEndTime?: string
   recurrence?: any
   lunarAnchor?: any
   color?: string
   category?: string
+  progress?: number
   reminders?: Array<{ offsetMinutes: number; enabled: boolean }>
 }): { id: string } {
   const id = crypto.randomUUID()
   const now = new Date().toISOString()
 
   db.prepare(
-    `INSERT INTO events (id, title, description, startDate, startTime, endDate, endTime,
-      recurrence, lunarAnchor, color, category, completedDates, createdAt, updatedAt)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, ?)`
+    `INSERT INTO events (id, title, description, receivedDate, receivedTime,
+      taskStartDate, taskStartTime, taskEndDate, taskEndTime,
+      recurrence, lunarAnchor, color, category, completedDates, progress, createdAt, updatedAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, ?, ?)`
   ).run(
-    id, input.title, input.description ?? null, input.startDate, input.startTime ?? null,
-    input.endDate ?? null, input.endTime ?? null,
+    id, input.title, input.description ?? null,
+    input.receivedDate, input.receivedTime,
+    input.taskStartDate, input.taskStartTime,
+    input.taskEndDate ?? null, input.taskEndTime ?? null,
     input.recurrence ? JSON.stringify(input.recurrence) : null,
     input.lunarAnchor ? JSON.stringify(input.lunarAnchor) : null,
-    input.color ?? '#4A90D9', input.category ?? null, now, now
+    input.color ?? '#4A90D9', input.category ?? null,
+    input.progress ?? 0, now, now
   )
 
   if (input.reminders) {
@@ -221,15 +285,18 @@ export function updateEvent(id: string, updates: Record<string, any>): void {
 
   if (updates.title !== undefined) { fields.push('title = ?'); values.push(updates.title) }
   if (updates.description !== undefined) { fields.push('description = ?'); values.push(updates.description) }
-  if (updates.startDate !== undefined) { fields.push('startDate = ?'); values.push(updates.startDate) }
-  if (updates.startTime !== undefined) { fields.push('startTime = ?'); values.push(updates.startTime) }
-  if (updates.endDate !== undefined) { fields.push('endDate = ?'); values.push(updates.endDate) }
-  if (updates.endTime !== undefined) { fields.push('endTime = ?'); values.push(updates.endTime) }
+  if (updates.receivedDate !== undefined) { fields.push('receivedDate = ?'); values.push(updates.receivedDate) }
+  if (updates.receivedTime !== undefined) { fields.push('receivedTime = ?'); values.push(updates.receivedTime) }
+  if (updates.taskStartDate !== undefined) { fields.push('taskStartDate = ?'); values.push(updates.taskStartDate) }
+  if (updates.taskStartTime !== undefined) { fields.push('taskStartTime = ?'); values.push(updates.taskStartTime) }
+  if (updates.taskEndDate !== undefined) { fields.push('taskEndDate = ?'); values.push(updates.taskEndDate) }
+  if (updates.taskEndTime !== undefined) { fields.push('taskEndTime = ?'); values.push(updates.taskEndTime) }
   if (updates.recurrence !== undefined) { fields.push('recurrence = ?'); values.push(updates.recurrence ? JSON.stringify(updates.recurrence) : null) }
   if (updates.lunarAnchor !== undefined) { fields.push('lunarAnchor = ?'); values.push(updates.lunarAnchor ? JSON.stringify(updates.lunarAnchor) : null) }
   if (updates.color !== undefined) { fields.push('color = ?'); values.push(updates.color) }
   if (updates.category !== undefined) { fields.push('category = ?'); values.push(updates.category) }
   if (updates.completedDates !== undefined) { fields.push('completedDates = ?'); values.push(JSON.stringify(updates.completedDates)) }
+  if (updates.progress !== undefined) { fields.push('progress = ?'); values.push(updates.progress) }
 
   fields.push('updatedAt = ?')
   values.push(now)
@@ -296,8 +363,8 @@ export function seedSampleEvents(): void {
 
   createEvent({
     title: '周一团队例会',
-    startDate: today,
-    startTime: '14:00',
+    receivedDate: today, receivedTime: '14:00',
+    taskStartDate: today, taskStartTime: '14:00',
     color: '#7B68EE',
     recurrence: { type: 'weekly', interval: 1, daysOfWeek: [1], endCondition: 'never' },
     reminders: [{ offsetMinutes: 30, enabled: true }, { offsetMinutes: 1440, enabled: true }]
@@ -305,7 +372,8 @@ export function seedSampleEvents(): void {
 
   createEvent({
     title: '春节',
-    startDate: today,
+    receivedDate: today, receivedTime: '09:00',
+    taskStartDate: today, taskStartTime: '09:00',
     color: '#E74C3C',
     recurrence: { type: 'lunar-yearly', interval: 1, lunarMonth: 1, lunarDay: 1, endCondition: 'never' },
     lunarAnchor: { year: 2026, month: 1, day: 1, isLeapMonth: false },
@@ -314,7 +382,8 @@ export function seedSampleEvents(): void {
 
   createEvent({
     title: '端午节',
-    startDate: today,
+    receivedDate: today, receivedTime: '09:00',
+    taskStartDate: today, taskStartTime: '09:00',
     color: '#27AE60',
     recurrence: { type: 'lunar-yearly', interval: 1, lunarMonth: 5, lunarDay: 5, endCondition: 'never' },
     lunarAnchor: { year: 2026, month: 5, day: 5, isLeapMonth: false },
@@ -323,7 +392,8 @@ export function seedSampleEvents(): void {
 
   createEvent({
     title: '中秋节',
-    startDate: today,
+    receivedDate: today, receivedTime: '09:00',
+    taskStartDate: today, taskStartTime: '09:00',
     color: '#F39C12',
     recurrence: { type: 'lunar-yearly', interval: 1, lunarMonth: 8, lunarDay: 15, endCondition: 'never' },
     lunarAnchor: { year: 2026, month: 8, day: 15, isLeapMonth: false },
@@ -332,8 +402,8 @@ export function seedSampleEvents(): void {
 
   createEvent({
     title: '月度绩效回顾',
-    startDate: today,
-    startTime: '10:00',
+    receivedDate: today, receivedTime: '10:00',
+    taskStartDate: today, taskStartTime: '10:00',
     color: '#1ABC9C',
     recurrence: { type: 'monthly', interval: 1, dayOfMonth: 15, endCondition: 'never' },
     reminders: [{ offsetMinutes: 60, enabled: true }]
@@ -341,9 +411,11 @@ export function seedSampleEvents(): void {
 
   createEvent({
     title: '交付项目报告',
-    startDate: today,
-    startTime: '17:00',
+    receivedDate: today, receivedTime: '09:00',
+    taskStartDate: today, taskStartTime: '17:00',
+    taskEndDate: today, taskEndTime: '18:00',
     color: '#8E44AD',
+    progress: 30,
     reminders: [{ offsetMinutes: 120, enabled: true }, { offsetMinutes: 30, enabled: true }]
   })
 
@@ -351,7 +423,8 @@ export function seedSampleEvents(): void {
   const birthdayDay = String(new Date().getDate()).padStart(2, '0')
   createEvent({
     title: '生日',
-    startDate: today,
+    receivedDate: today, receivedTime: '09:00',
+    taskStartDate: today, taskStartTime: '09:00',
     color: '#F39C12',
     recurrence: { type: 'yearly', interval: 1, monthOfYear: parseInt(birthdayMonth), dayOfMonth: parseInt(birthdayDay), endCondition: 'never' },
     reminders: [{ offsetMinutes: 0, enabled: true }]

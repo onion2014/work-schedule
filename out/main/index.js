@@ -27,15 +27,18 @@ function reopenDatabase() {
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
       description TEXT,
-      startDate TEXT NOT NULL,
-      startTime TEXT,
-      endDate TEXT,
-      endTime TEXT,
+      receivedDate TEXT NOT NULL,
+      receivedTime TEXT NOT NULL,
+      taskStartDate TEXT NOT NULL,
+      taskStartTime TEXT NOT NULL,
+      taskEndDate TEXT,
+      taskEndTime TEXT,
       recurrence TEXT,
       lunarAnchor TEXT,
       color TEXT NOT NULL DEFAULT '#4A90D9',
       category TEXT,
       completedDates TEXT DEFAULT '[]',
+      progress INTEGER NOT NULL DEFAULT 0,
       createdAt TEXT NOT NULL,
       updatedAt TEXT NOT NULL
     )
@@ -71,20 +74,70 @@ async function initDatabase() {
   }
   db = new Database$1(DB_PATH);
   db.pragma("journal_mode = WAL");
+  const columns = db.prepare("PRAGMA table_info(events)").all();
+  const hasOldSchema = columns.some((c) => c.name === "startDate");
+  if (hasOldSchema) {
+    console.log("Migrating event schema: startDate/startTime → receivedDate/receivedTime + taskStartDate/taskStartTime + taskEndDate/taskEndTime + progress");
+    db.exec(`
+      CREATE TABLE events_new (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        description TEXT,
+        receivedDate TEXT NOT NULL,
+        receivedTime TEXT NOT NULL,
+        taskStartDate TEXT NOT NULL,
+        taskStartTime TEXT NOT NULL,
+        taskEndDate TEXT,
+        taskEndTime TEXT,
+        recurrence TEXT,
+        lunarAnchor TEXT,
+        color TEXT NOT NULL DEFAULT '#4A90D9',
+        category TEXT,
+        completedDates TEXT DEFAULT '[]',
+        progress INTEGER NOT NULL DEFAULT 0,
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL
+      )
+    `);
+    db.exec(`
+      INSERT INTO events_new
+        (id, title, description, receivedDate, receivedTime, taskStartDate, taskStartTime,
+         taskEndDate, taskEndTime, recurrence, lunarAnchor, color, category, completedDates,
+         progress, createdAt, updatedAt)
+      SELECT
+        id, title, description,
+        startDate,
+        COALESCE(startTime, '09:00'),
+        startDate,
+        COALESCE(startTime, '09:00'),
+        endDate,
+        endTime,
+        recurrence, lunarAnchor, color, category, completedDates,
+        0,
+        createdAt, updatedAt
+      FROM events
+    `);
+    db.exec("DROP TABLE events");
+    db.exec("ALTER TABLE events_new RENAME TO events");
+    console.log("Event schema migration complete.");
+  }
   db.exec(`
     CREATE TABLE IF NOT EXISTS events (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
       description TEXT,
-      startDate TEXT NOT NULL,
-      startTime TEXT,
-      endDate TEXT,
-      endTime TEXT,
+      receivedDate TEXT NOT NULL,
+      receivedTime TEXT NOT NULL,
+      taskStartDate TEXT NOT NULL,
+      taskStartTime TEXT NOT NULL,
+      taskEndDate TEXT,
+      taskEndTime TEXT,
       recurrence TEXT,
       lunarAnchor TEXT,
       color TEXT NOT NULL DEFAULT '#4A90D9',
       category TEXT,
       completedDates TEXT DEFAULT '[]',
+      progress INTEGER NOT NULL DEFAULT 0,
       createdAt TEXT NOT NULL,
       updatedAt TEXT NOT NULL
     )
@@ -124,21 +177,25 @@ function createEvent(input) {
   const id = crypto.randomUUID();
   const now = (/* @__PURE__ */ new Date()).toISOString();
   db.prepare(
-    `INSERT INTO events (id, title, description, startDate, startTime, endDate, endTime,
-      recurrence, lunarAnchor, color, category, completedDates, createdAt, updatedAt)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, ?)`
+    `INSERT INTO events (id, title, description, receivedDate, receivedTime,
+      taskStartDate, taskStartTime, taskEndDate, taskEndTime,
+      recurrence, lunarAnchor, color, category, completedDates, progress, createdAt, updatedAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, ?, ?)`
   ).run(
     id,
     input.title,
     input.description ?? null,
-    input.startDate,
-    input.startTime ?? null,
-    input.endDate ?? null,
-    input.endTime ?? null,
+    input.receivedDate,
+    input.receivedTime,
+    input.taskStartDate,
+    input.taskStartTime,
+    input.taskEndDate ?? null,
+    input.taskEndTime ?? null,
     input.recurrence ? JSON.stringify(input.recurrence) : null,
     input.lunarAnchor ? JSON.stringify(input.lunarAnchor) : null,
     input.color ?? "#4A90D9",
     input.category ?? null,
+    input.progress ?? 0,
     now,
     now
   );
@@ -164,21 +221,29 @@ function updateEvent(id, updates) {
     fields.push("description = ?");
     values.push(updates.description);
   }
-  if (updates.startDate !== void 0) {
-    fields.push("startDate = ?");
-    values.push(updates.startDate);
+  if (updates.receivedDate !== void 0) {
+    fields.push("receivedDate = ?");
+    values.push(updates.receivedDate);
   }
-  if (updates.startTime !== void 0) {
-    fields.push("startTime = ?");
-    values.push(updates.startTime);
+  if (updates.receivedTime !== void 0) {
+    fields.push("receivedTime = ?");
+    values.push(updates.receivedTime);
   }
-  if (updates.endDate !== void 0) {
-    fields.push("endDate = ?");
-    values.push(updates.endDate);
+  if (updates.taskStartDate !== void 0) {
+    fields.push("taskStartDate = ?");
+    values.push(updates.taskStartDate);
   }
-  if (updates.endTime !== void 0) {
-    fields.push("endTime = ?");
-    values.push(updates.endTime);
+  if (updates.taskStartTime !== void 0) {
+    fields.push("taskStartTime = ?");
+    values.push(updates.taskStartTime);
+  }
+  if (updates.taskEndDate !== void 0) {
+    fields.push("taskEndDate = ?");
+    values.push(updates.taskEndDate);
+  }
+  if (updates.taskEndTime !== void 0) {
+    fields.push("taskEndTime = ?");
+    values.push(updates.taskEndTime);
   }
   if (updates.recurrence !== void 0) {
     fields.push("recurrence = ?");
@@ -199,6 +264,10 @@ function updateEvent(id, updates) {
   if (updates.completedDates !== void 0) {
     fields.push("completedDates = ?");
     values.push(JSON.stringify(updates.completedDates));
+  }
+  if (updates.progress !== void 0) {
+    fields.push("progress = ?");
+    values.push(updates.progress);
   }
   fields.push("updatedAt = ?");
   values.push(now);
@@ -252,15 +321,20 @@ function seedSampleEvents() {
   const today = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
   createEvent({
     title: "周一团队例会",
-    startDate: today,
-    startTime: "14:00",
+    receivedDate: today,
+    receivedTime: "14:00",
+    taskStartDate: today,
+    taskStartTime: "14:00",
     color: "#7B68EE",
     recurrence: { type: "weekly", interval: 1, daysOfWeek: [1], endCondition: "never" },
     reminders: [{ offsetMinutes: 30, enabled: true }, { offsetMinutes: 1440, enabled: true }]
   });
   createEvent({
     title: "春节",
-    startDate: today,
+    receivedDate: today,
+    receivedTime: "09:00",
+    taskStartDate: today,
+    taskStartTime: "09:00",
     color: "#E74C3C",
     recurrence: { type: "lunar-yearly", interval: 1, lunarMonth: 1, lunarDay: 1, endCondition: "never" },
     lunarAnchor: { year: 2026, month: 1, day: 1, isLeapMonth: false },
@@ -268,7 +342,10 @@ function seedSampleEvents() {
   });
   createEvent({
     title: "端午节",
-    startDate: today,
+    receivedDate: today,
+    receivedTime: "09:00",
+    taskStartDate: today,
+    taskStartTime: "09:00",
     color: "#27AE60",
     recurrence: { type: "lunar-yearly", interval: 1, lunarMonth: 5, lunarDay: 5, endCondition: "never" },
     lunarAnchor: { year: 2026, month: 5, day: 5, isLeapMonth: false },
@@ -276,7 +353,10 @@ function seedSampleEvents() {
   });
   createEvent({
     title: "中秋节",
-    startDate: today,
+    receivedDate: today,
+    receivedTime: "09:00",
+    taskStartDate: today,
+    taskStartTime: "09:00",
     color: "#F39C12",
     recurrence: { type: "lunar-yearly", interval: 1, lunarMonth: 8, lunarDay: 15, endCondition: "never" },
     lunarAnchor: { year: 2026, month: 8, day: 15, isLeapMonth: false },
@@ -284,24 +364,34 @@ function seedSampleEvents() {
   });
   createEvent({
     title: "月度绩效回顾",
-    startDate: today,
-    startTime: "10:00",
+    receivedDate: today,
+    receivedTime: "10:00",
+    taskStartDate: today,
+    taskStartTime: "10:00",
     color: "#1ABC9C",
     recurrence: { type: "monthly", interval: 1, dayOfMonth: 15, endCondition: "never" },
     reminders: [{ offsetMinutes: 60, enabled: true }]
   });
   createEvent({
     title: "交付项目报告",
-    startDate: today,
-    startTime: "17:00",
+    receivedDate: today,
+    receivedTime: "09:00",
+    taskStartDate: today,
+    taskStartTime: "17:00",
+    taskEndDate: today,
+    taskEndTime: "18:00",
     color: "#8E44AD",
+    progress: 30,
     reminders: [{ offsetMinutes: 120, enabled: true }, { offsetMinutes: 30, enabled: true }]
   });
   const birthdayMonth = String((/* @__PURE__ */ new Date()).getMonth() + 1).padStart(2, "0");
   const birthdayDay = String((/* @__PURE__ */ new Date()).getDate()).padStart(2, "0");
   createEvent({
     title: "生日",
-    startDate: today,
+    receivedDate: today,
+    receivedTime: "09:00",
+    taskStartDate: today,
+    taskStartTime: "09:00",
     color: "#F39C12",
     recurrence: { type: "yearly", interval: 1, monthOfYear: parseInt(birthdayMonth), dayOfMonth: parseInt(birthdayDay), endCondition: "never" },
     reminders: [{ offsetMinutes: 0, enabled: true }]
@@ -8092,13 +8182,13 @@ function extractFestivals(lunarDay, solarDay) {
 }
 function expandOccurrences(event, range) {
   if (!event.recurrence) {
-    if (isInRange(event.startDate, range)) {
-      return [makeOccurrence(event, event.startDate)];
+    if (isInRange(event.receivedDate, range)) {
+      return [makeOccurrence(event, event.receivedDate)];
     }
     return [];
   }
   const rule = event.recurrence;
-  const anchor = dayjs(event.startDate);
+  const anchor = dayjs(event.receivedDate);
   const out = [];
   switch (rule.type) {
     case "daily":
@@ -8238,12 +8328,25 @@ function expandLunarYearly(rule, event, range, out) {
   }
 }
 function makeOccurrence(event, date) {
+  const receivedAnchor = dayjs(event.receivedDate);
+  const taskStartAnchor = dayjs(event.taskStartDate);
+  const taskStartOffset = taskStartAnchor.diff(receivedAnchor, "day");
+  const occTaskStartDate = dayjs(date).add(taskStartOffset, "day").format("YYYY-MM-DD");
+  let occTaskEndDate;
+  if (event.taskEndDate) {
+    const taskEndAnchor = dayjs(event.taskEndDate);
+    const taskEndOffset = taskEndAnchor.diff(taskStartAnchor, "day");
+    occTaskEndDate = dayjs(occTaskStartDate).add(taskEndOffset, "day").format("YYYY-MM-DD");
+  }
   return {
     eventId: event.id,
     date,
-    time: event.startTime,
-    endDate: event.endDate,
-    endTime: event.endTime,
+    receivedTime: event.receivedTime,
+    taskStartDate: occTaskStartDate,
+    taskStartTime: event.taskStartTime,
+    taskEndDate: occTaskEndDate,
+    taskEndTime: event.taskEndTime ?? void 0,
+    progress: event.progress ?? 0,
     title: event.title,
     color: event.color,
     completed: event.completedDates?.includes(date) ?? false,
@@ -8280,24 +8383,27 @@ function checkReminders() {
     const event = {
       id: raw.id,
       title: raw.title,
-      startDate: raw.startDate,
-      startTime: raw.startTime,
-      endDate: raw.endDate,
-      endTime: raw.endTime,
+      receivedDate: raw.receivedDate,
+      receivedTime: raw.receivedTime,
+      taskStartDate: raw.taskStartDate,
+      taskStartTime: raw.taskStartTime,
+      taskEndDate: raw.taskEndDate,
+      taskEndTime: raw.taskEndTime,
       recurrence: raw.recurrence || null,
       lunarAnchor: raw.lunarAnchor || void 0,
       color: raw.color,
+      progress: raw.progress ?? 0,
+      completedDates: raw.completedDates || [],
       reminders
     };
     const occurrences = expandOccurrences(event, { start: rangeStart, end: rangeEnd });
     for (const occ of occurrences) {
-      const occTime = occ.time || "09:00";
-      const occStart = dayjs(`${occ.date} ${occTime}`);
+      const occStart = dayjs(`${occ.taskStartDate} ${occ.taskStartTime}`);
       for (const r of reminders) {
         const reminderTime = occStart.subtract(r.offsetMinutes, "minute");
         if (reminderTime.isBefore(now) && reminderTime.isAfter(now.subtract(2, "minute"))) {
           if (!r.triggeredAt || !dayjs(r.triggeredAt).isSame(now, "day")) {
-            fireReminder(raw.title, occ.date, occTime, r.offsetMinutes);
+            fireReminder(raw.title, occ.date, occ.taskStartTime, occ.progress, r.offsetMinutes);
             markReminderTriggered(r.id);
           }
         }
@@ -8305,11 +8411,11 @@ function checkReminders() {
     }
   }
 }
-function fireReminder(title, date, time, offsetMin) {
+function fireReminder(title, date, taskStartTime, progress, offsetMin) {
   const desc = describeOffset(offsetMin);
   new electron.Notification({
     title: `日历提醒: ${title}`,
-    body: `${date} ${time} · ${desc}`,
+    body: `${date} ${taskStartTime} · 进度${progress}% · ${desc}`,
     silent: false
   }).show();
 }
@@ -8331,7 +8437,7 @@ const BACKUP_INTERVAL_MS = 24 * 60 * 60 * 1e3;
 const INITIAL_BACKUP_DELAY_MS = 3e4;
 const RETRY_DELAY_MS = 36e5;
 const MAX_IMPORT_EVENTS = 1e4;
-const JSON_EXPORT_VERSION = 1;
+const JSON_EXPORT_VERSION = 2;
 const DAILY_KEEP_DAYS = 7;
 const WEEKLY_KEEP_WEEKS = 4;
 const MONTHLY_KEEP_MONTHS = 3;
@@ -8565,10 +8671,13 @@ function exportToJson() {
     id: ev.id,
     title: ev.title,
     description: ev.description ?? null,
-    startDate: ev.startDate,
-    startTime: ev.startTime ?? null,
-    endDate: ev.endDate ?? null,
-    endTime: ev.endTime ?? null,
+    receivedDate: ev.receivedDate,
+    receivedTime: ev.receivedTime,
+    taskStartDate: ev.taskStartDate,
+    taskStartTime: ev.taskStartTime,
+    taskEndDate: ev.taskEndDate ?? null,
+    taskEndTime: ev.taskEndTime ?? null,
+    progress: ev.progress ?? 0,
     recurrence: ev.recurrence || null,
     lunarAnchor: ev.lunarAnchor || null,
     color: ev.color || "#4A90D9",
@@ -8612,6 +8721,23 @@ function importFromJson(jsonContent, mode = "merge-overwrite") {
   if (data.events.length > MAX_IMPORT_EVENTS) {
     return { success: false, importedCount: 0, skippedCount: 0, errors: [`Too many events: ${data.events.length} (max: ${MAX_IMPORT_EVENTS})`] };
   }
+  if (data.version === 1) {
+    for (const ev of data.events) {
+      if (ev.startDate && !ev.receivedDate) {
+        ev.receivedDate = ev.startDate;
+        ev.receivedTime = ev.startTime || "09:00";
+        ev.taskStartDate = ev.startDate;
+        ev.taskStartTime = ev.startTime || "09:00";
+        ev.taskEndDate = ev.endDate;
+        ev.taskEndTime = ev.endTime;
+        ev.progress = 0;
+        delete ev.startDate;
+        delete ev.startTime;
+        delete ev.endDate;
+        delete ev.endTime;
+      }
+    }
+  }
   const errors = [];
   const seenIds = /* @__PURE__ */ new Set();
   for (let i = 0; i < data.events.length; i++) {
@@ -8624,8 +8750,8 @@ function importFromJson(jsonContent, mode = "merge-overwrite") {
       errors.push(`Event #${i + 1}: missing title`);
       continue;
     }
-    if (!ev.startDate) {
-      errors.push(`Event #${i + 1}: missing startDate`);
+    if (!ev.receivedDate) {
+      errors.push(`Event #${i + 1}: missing receivedDate`);
       continue;
     }
     if (seenIds.has(ev.id)) {
@@ -8645,9 +8771,10 @@ function importFromJson(jsonContent, mode = "merge-overwrite") {
     db2.prepare("DELETE FROM events").run();
   }
   const insertEvent = db2.prepare(
-    `INSERT OR REPLACE INTO events (id, title, description, startDate, startTime, endDate, endTime,
-      recurrence, lunarAnchor, color, category, completedDates, createdAt, updatedAt)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT OR REPLACE INTO events (id, title, description, receivedDate, receivedTime,
+      taskStartDate, taskStartTime, taskEndDate, taskEndTime,
+      recurrence, lunarAnchor, color, category, completedDates, progress, createdAt, updatedAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const deleteReminders = db2.prepare("DELETE FROM reminders WHERE eventId = ?");
   const insertReminder = db2.prepare(
@@ -8666,15 +8793,18 @@ function importFromJson(jsonContent, mode = "merge-overwrite") {
         ev.id,
         ev.title,
         ev.description ?? null,
-        ev.startDate,
-        ev.startTime ?? null,
-        ev.endDate ?? null,
-        ev.endTime ?? null,
+        ev.receivedDate,
+        ev.receivedTime,
+        ev.taskStartDate,
+        ev.taskStartTime,
+        ev.taskEndDate ?? null,
+        ev.taskEndTime ?? null,
         ev.recurrence ? JSON.stringify(ev.recurrence) : null,
         ev.lunarAnchor ? JSON.stringify(ev.lunarAnchor) : null,
         ev.color ?? "#4A90D9",
         ev.category ?? null,
         ev.completedDates ? JSON.stringify(ev.completedDates) : "[]",
+        ev.progress ?? 0,
         ev.createdAt ?? (/* @__PURE__ */ new Date()).toISOString(),
         ev.updatedAt ?? (/* @__PURE__ */ new Date()).toISOString()
       );
@@ -8861,10 +8991,13 @@ function mapRawToEvent(raw) {
     id: raw.id,
     title: raw.title,
     description: raw.description,
-    startDate: raw.startDate,
-    startTime: raw.startTime,
-    endDate: raw.endDate,
-    endTime: raw.endTime,
+    receivedDate: raw.receivedDate,
+    receivedTime: raw.receivedTime,
+    taskStartDate: raw.taskStartDate,
+    taskStartTime: raw.taskStartTime,
+    taskEndDate: raw.taskEndDate,
+    taskEndTime: raw.taskEndTime,
+    progress: raw.progress ?? 0,
     recurrence: raw.recurrence || null,
     lunarAnchor: raw.lunarAnchor || void 0,
     reminders: (raw.reminders || []).map((r) => ({
@@ -9036,6 +9169,16 @@ function ensurePopupWindow() {
       contextIsolation: true
     }
   });
+  popupWindow.webContents.on("will-navigate", (event, url) => {
+    if (url === "command://open-app") {
+      event.preventDefault();
+      hidePopup();
+      stopFlashing();
+      if (!mainWindow) createMainWindow();
+      mainWindow?.show();
+      mainWindow?.focus();
+    }
+  });
   popupWindow.on("mouse-enter", () => {
     if (hidePopupTimer) {
       clearTimeout(hidePopupTimer);
@@ -9074,6 +9217,11 @@ function buildPopupTemplate() {
     border-radius: 8px;
     box-shadow: 0 2px 12px rgba(0,0,0,0.18), 0 0 1px rgba(0,0,0,0.1);
     background: #ffffff;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .popup:hover {
+    background: #f8f8f8;
   }
   .header {
     padding: 10px 14px 8px;
@@ -9123,6 +9271,11 @@ function buildPopupTemplate() {
     white-space: nowrap;
     flex: 1;
   }
+  .progress {
+    color: #888;
+    font-size: 10px;
+    flex-shrink: 0;
+  }
 </style>
 </head>
 <body>
@@ -9140,6 +9293,12 @@ function buildPopupTemplate() {
     document.getElementById('header-text').innerHTML = headerHtml;
     document.getElementById('items').innerHTML = itemsHtml;
   };
+  // Click anywhere on the popup → navigate to a command URL that the
+  // main process intercepts (will-navigate) to open the calendar window.
+  document.addEventListener('click', function (e) {
+    e.preventDefault();
+    window.location.href = 'command://open-app';
+  });
 <\/script>
 </body>
 </html>`;
@@ -9152,7 +9311,7 @@ function buildPopupContent() {
     itemsHtml = '<div class="item empty">✅ 无待办</div>';
   } else {
     for (const item of cachedPending) {
-      itemsHtml += `<div class="item"><span class="dot" style="background:${item.color}"></span><span class="time">${item.time}</span><span class="title">${item.title}</span></div>`;
+      itemsHtml += `<div class="item"><span class="dot" style="background:${item.color}"></span><span class="time">${item.time}</span><span class="title">${item.title}</span><span class="progress">${item.progress}%</span></div>`;
     }
   }
   const headerText = total === 0 ? `${label} · 无待办` : `${label} · 待办${total}项`;
@@ -9237,10 +9396,13 @@ function getTodayPending() {
     const event = {
       id: raw.id,
       title: raw.title,
-      startDate: raw.startDate,
-      startTime: raw.startTime,
-      endDate: raw.endDate,
-      endTime: raw.endTime,
+      receivedDate: raw.receivedDate,
+      receivedTime: raw.receivedTime,
+      taskStartDate: raw.taskStartDate,
+      taskStartTime: raw.taskStartTime,
+      taskEndDate: raw.taskEndDate,
+      taskEndTime: raw.taskEndTime,
+      progress: raw.progress ?? 0,
       recurrence: raw.recurrence || null,
       lunarAnchor: raw.lunarAnchor || void 0,
       color: raw.color,
@@ -9253,18 +9415,15 @@ function getTodayPending() {
     for (const occ of occs) {
       if (!occ.completed && occ.date === today) {
         pending.push({
-          time: occ.time || "全天",
+          time: occ.taskStartTime,
           title: occ.title,
-          color: occ.color || raw.color || "#4A90D9"
+          color: occ.color || raw.color || "#4A90D9",
+          progress: occ.progress ?? 0
         });
       }
     }
   }
-  pending.sort((a, b) => {
-    if (a.time === "全天" && b.time !== "全天") return -1;
-    if (a.time !== "全天" && b.time === "全天") return 1;
-    return a.time.localeCompare(b.time);
-  });
+  pending.sort((a, b) => a.time.localeCompare(b.time));
   return pending;
 }
 function refreshPendingCache() {
@@ -9299,7 +9458,7 @@ function updateTaskbarTitle() {
     mainWindow.setTitle(`${label} · 待办${total}项`);
   } else {
     const item = cachedPending[phase - 1];
-    mainWindow.setTitle(`${label} · ${item.time} ${item.title}`);
+    mainWindow.setTitle(`${label} · ${item.time} ${item.title} ${item.progress}%`);
   }
   scrollIndex++;
 }

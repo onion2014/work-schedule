@@ -49,15 +49,23 @@
             :style="{ borderLeftColor: occ.color }"
             @click="openEditorForOcc(occ)"
           >
-            <button
+            <div class="ev-main">
+              <button
               class="check-btn"
               :class="{ checked: occ.completed }"
               @click.stop="onToggleCompletion(occ)"
             >✓</button>
-            <span class="ev-time">{{ occ.time || '全天' }}</span>
-            <span class="ev-title">{{ occ.title }}</span>
-            <span v-if="occ.completed" class="ev-badge done-badge">已办</span>
-            <span v-else class="ev-badge todo-badge">待办</span>
+              <span class="ev-title">{{ occ.title }}</span>
+              <span class="ev-progress">{{ occ.progress }}%</span>
+              <span v-if="occ.completed" class="ev-badge done-badge">已办</span>
+              <span v-else-if="occ.progress > 0" class="ev-badge doing-badge">进行中</span>
+              <span v-else class="ev-badge todo-badge">待办</span>
+            </div>
+            <div class="ev-times">
+              <span>接收 {{ occ.receivedTime }}</span>
+              <span>开始 {{ occ.taskStartTime }}</span>
+              <span v-if="occ.taskEndTime">结束 {{ occ.taskEndTime }}</span>
+            </div>
           </div>
           <button class="add-btn" @click="openEditor(selectedDate)">+ 添加事件</button>
         </div>
@@ -391,8 +399,7 @@ const exportText = computed(() => {
     const occsForDay = exportOccs.value.filter(o => o.date === dateStr)
 
     for (const occ of occsForDay) {
-      const timeStr = occ.time || '全天'
-      const line = `${dayLabel}  ${timeStr}  ${occ.title}`
+      const line = `${dayLabel}  接收${occ.receivedTime}  开始${occ.taskStartTime}  ${occ.title}  ${occ.progress}%`
       if (occ.completed) {
         doneItems.push(line)
       } else {
@@ -447,11 +454,10 @@ const exportHtml = computed(() => {
     const occsForDay = exportOccs.value.filter(o => o.date === dateStr)
 
     for (const occ of occsForDay) {
-      const timeStr = occ.time || '全天'
       if (occ.completed) {
-        doneItems.push({ dayLabel, timeStr, title: occ.title, color: occ.color })
+        doneItems.push({ dayLabel, receivedTime: occ.receivedTime, taskStartTime: occ.taskStartTime, taskEndTime: occ.taskEndTime, title: occ.title, color: occ.color, progress: occ.progress })
       } else {
-        todoItems.push({ dayLabel, timeStr, title: occ.title, color: occ.color })
+        todoItems.push({ dayLabel, receivedTime: occ.receivedTime, taskStartTime: occ.taskStartTime, taskEndTime: occ.taskEndTime, title: occ.title, color: occ.color, progress: occ.progress })
       }
     }
     cur = cur.add(1, 'day')
@@ -463,7 +469,7 @@ const exportHtml = computed(() => {
   html += `<div class="ex-section"><div class="ex-section-title todo">待办 ${todoItems.length} 项</div>`
   if (todoItems.length) {
     html += todoItems.map((item, i) =>
-      `<div class="ex-row"><span class="ex-num">${i + 1}</span><span class="ex-dot" style="background:${item.color}"></span><span class="ex-day">${item.dayLabel}</span><span class="ex-time">${item.timeStr}</span><span class="ex-title">${item.title}</span></div>`
+      `<div class="ex-row"><span class="ex-num">${i + 1}</span><span class="ex-dot" style="background:${item.color}"></span><span class="ex-day">${item.dayLabel}</span><span class="ex-received">接收${item.receivedTime}</span><span class="ex-task-start">开始${item.taskStartTime}</span><span class="ex-title">${item.title}</span><span class="ex-progress">${item.progress}%</span></div>`
     ).join('')
   } else {
     html += `<div class="ex-empty">无待办事项</div>`
@@ -473,7 +479,7 @@ const exportHtml = computed(() => {
   html += `<div class="ex-section"><div class="ex-section-title done">已办 ${doneItems.length} 项</div>`
   if (doneItems.length) {
     html += doneItems.map((item, i) =>
-      `<div class="ex-row done"><span class="ex-num">${i + 1}</span><span class="ex-dot" style="background:${item.color}"></span><span class="ex-day">${item.dayLabel}</span><span class="ex-time">${item.timeStr}</span><span class="ex-title">${item.title}</span></div>`
+      `<div class="ex-row done"><span class="ex-num">${i + 1}</span><span class="ex-dot" style="background:${item.color}"></span><span class="ex-day">${item.dayLabel}</span><span class="ex-received">接收${item.receivedTime}</span><span class="ex-task-start">开始${item.taskStartTime}</span><span class="ex-title">${item.title}</span><span class="ex-progress">${item.progress}%</span></div>`
     ).join('')
   } else {
     html += `<div class="ex-empty">无已办事项</div>`
@@ -672,7 +678,8 @@ watch(currentDate, loadData)
 
 .event-item {
   display: flex;
-  gap: 8px;
+  flex-direction: column;
+  gap: 2px;
   padding: 8px 10px;
   border-left: 2px solid;
   margin-bottom: 4px;
@@ -680,7 +687,6 @@ watch(currentDate, loadData)
   background: transparent;
   cursor: pointer;
   transition: background var(--transition);
-  align-items: center;
 }
 
 .event-item:hover {
@@ -694,6 +700,12 @@ watch(currentDate, loadData)
 .event-item.completed .ev-title {
   text-decoration: line-through;
   color: var(--color-text-secondary);
+}
+
+.ev-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .check-btn {
@@ -722,12 +734,25 @@ watch(currentDate, loadData)
   color: #fff;
 }
 
+.ev-title {
+  font-size: 14px;
+  flex: 1;
+}
+
+.ev-progress {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  padding: 1px 4px;
+  background: rgba(0,0,0,0.05);
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
 .ev-badge {
   font-size: 11px;
   padding: 2px 8px;
   border-radius: var(--radius);
   flex-shrink: 0;
-  margin-left: auto;
 }
 
 .todo-badge {
@@ -735,19 +760,22 @@ watch(currentDate, loadData)
   color: var(--color-primary);
 }
 
+.doing-badge {
+  background: rgba(245, 158, 11, 0.1);
+  color: #F59E0B;
+}
+
 .done-badge {
   background: rgba(52, 199, 89, 0.1);
   color: var(--color-success);
 }
 
-.ev-time {
+.ev-times {
+  font-size: 11px;
   color: var(--color-text-secondary);
-  font-size: 12px;
-  min-width: 48px;
-}
-
-.ev-title {
-  font-size: 14px;
+  display: flex;
+  gap: 6px;
+  padding-left: 28px;
 }
 
 .add-btn {
@@ -784,7 +812,7 @@ watch(currentDate, loadData)
   border-radius: var(--radius);
   border: 1px solid var(--color-border);
   padding: 20px;
-  width: 560px;
+  width: 600px;
   max-height: 85vh;
   overflow-y: auto;
 }
@@ -916,13 +944,27 @@ watch(currentDate, loadData)
   color: var(--color-text-secondary);
 }
 
-.export-content :deep(.ex-time) {
-  min-width: 48px;
+.export-content :deep(.ex-received) {
+  min-width: 60px;
   color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.export-content :deep(.ex-task-start) {
+  min-width: 60px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
 }
 
 .export-content :deep(.ex-title) {
   font-weight: 500;
+  flex: 1;
+}
+
+.export-content :deep(.ex-progress) {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  flex-shrink: 0;
 }
 
 .export-content :deep(.ex-empty) {

@@ -17,15 +17,15 @@ import type {
 /** Expand all occurrences of an event within a date range */
 export function expandOccurrences(event: CalendarEvent, range: DateRange): Occurrence[] {
   if (!event.recurrence) {
-    // Single occurrence — include if date falls in range
-    if (isInRange(event.startDate, range)) {
-      return [makeOccurrence(event, event.startDate)]
+    // Single occurrence — include if receivedDate falls in range
+    if (isInRange(event.receivedDate, range)) {
+      return [makeOccurrence(event, event.receivedDate)]
     }
     return []
   }
 
   const rule = event.recurrence
-  const anchor = dayjs(event.startDate)
+  const anchor = dayjs(event.receivedDate)
   const out: Occurrence[] = []
 
   switch (rule.type) {
@@ -197,12 +197,29 @@ function expandLunarYearly(
 // ===== Helpers =====
 
 function makeOccurrence(event: CalendarEvent, date: string): Occurrence {
+  // Compute taskStartDate offset from receivedDate
+  const receivedAnchor = dayjs(event.receivedDate)
+  const taskStartAnchor = dayjs(event.taskStartDate)
+  const taskStartOffset = taskStartAnchor.diff(receivedAnchor, 'day')
+  const occTaskStartDate = dayjs(date).add(taskStartOffset, 'day').format('YYYY-MM-DD')
+
+  // Compute taskEndDate offset from taskStartDate (if present)
+  let occTaskEndDate: string | undefined
+  if (event.taskEndDate) {
+    const taskEndAnchor = dayjs(event.taskEndDate)
+    const taskEndOffset = taskEndAnchor.diff(taskStartAnchor, 'day')
+    occTaskEndDate = dayjs(occTaskStartDate).add(taskEndOffset, 'day').format('YYYY-MM-DD')
+  }
+
   return {
     eventId: event.id,
     date,
-    time: event.startTime,
-    endDate: event.endDate,
-    endTime: event.endTime,
+    receivedTime: event.receivedTime,
+    taskStartDate: occTaskStartDate,
+    taskStartTime: event.taskStartTime,
+    taskEndDate: occTaskEndDate,
+    taskEndTime: event.taskEndTime ?? undefined,
+    progress: event.progress ?? 0,
     title: event.title,
     color: event.color,
     completed: event.completedDates?.includes(date) ?? false,

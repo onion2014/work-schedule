@@ -32,21 +32,25 @@ function checkReminders(): void {
     const event = {
       id: raw.id,
       title: raw.title,
-      startDate: raw.startDate,
-      startTime: raw.startTime,
-      endDate: raw.endDate,
-      endTime: raw.endTime,
+      receivedDate: raw.receivedDate,
+      receivedTime: raw.receivedTime,
+      taskStartDate: raw.taskStartDate,
+      taskStartTime: raw.taskStartTime,
+      taskEndDate: raw.taskEndDate,
+      taskEndTime: raw.taskEndTime,
       recurrence: raw.recurrence || null,
       lunarAnchor: raw.lunarAnchor || undefined,
       color: raw.color,
+      progress: raw.progress ?? 0,
+      completedDates: raw.completedDates || [],
       reminders
     }
 
     const occurrences = expandOccurrences(event, { start: rangeStart, end: rangeEnd })
 
     for (const occ of occurrences) {
-      const occTime = occ.time || '09:00'
-      const occStart = dayjs(`${occ.date} ${occTime}`)
+      // Reminders fire relative to task start time
+      const occStart = dayjs(`${occ.taskStartDate} ${occ.taskStartTime}`)
 
       for (const r of reminders) {
         const reminderTime = occStart.subtract(r.offsetMinutes, 'minute')
@@ -54,7 +58,7 @@ function checkReminders(): void {
         // Fire if within last 2 minutes and not already triggered today
         if (reminderTime.isBefore(now) && reminderTime.isAfter(now.subtract(2, 'minute'))) {
           if (!r.triggeredAt || !dayjs(r.triggeredAt).isSame(now, 'day')) {
-            fireReminder(raw.title, occ.date, occTime, r.offsetMinutes)
+            fireReminder(raw.title, occ.date, occ.taskStartTime, occ.progress, r.offsetMinutes)
             markReminderTriggered(r.id)
           }
         }
@@ -63,11 +67,11 @@ function checkReminders(): void {
   }
 }
 
-function fireReminder(title: string, date: string, time: string, offsetMin: number): void {
+function fireReminder(title: string, date: string, taskStartTime: string, progress: number, offsetMin: number): void {
   const desc = describeOffset(offsetMin)
   new Notification({
     title: `日历提醒: ${title}`,
-    body: `${date} ${time} · ${desc}`,
+    body: `${date} ${taskStartTime} · 进度${progress}% · ${desc}`,
     silent: false
   }).show()
 }

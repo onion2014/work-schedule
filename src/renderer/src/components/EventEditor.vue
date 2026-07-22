@@ -8,15 +8,40 @@
         <input v-model="form.title" placeholder="事件名称" />
       </div>
 
+      <!-- 需求接收时间 -->
       <div class="field">
-        <label>日期</label>
-        <input v-model="form.startDate" type="date" />
+        <label>需求接收时间</label>
+        <div class="datetime-row">
+          <input v-model="form.receivedDate" type="date" />
+          <input v-model="form.receivedTime" type="time" />
+        </div>
       </div>
 
+      <!-- 任务开始时间 -->
       <div class="field">
-        <label>时间</label>
-        <input v-model="form.startTime" type="time" />
-        <span class="hint">留空 = 全天事件</span>
+        <label>任务开始时间</label>
+        <div class="datetime-row">
+          <input v-model="form.taskStartDate" type="date" />
+          <input v-model="form.taskStartTime" type="time" />
+        </div>
+      </div>
+
+      <!-- 任务结束时间 -->
+      <div class="field">
+        <label>任务结束时间</label>
+        <div class="datetime-row">
+          <input v-model="form.taskEndDate" type="date" />
+          <input v-model="form.taskEndTime" type="time" />
+        </div>
+      </div>
+
+      <!-- 进度 -->
+      <div class="field">
+        <label>进度</label>
+        <div class="progress-row">
+          <input v-model="form.progress" type="range" min="0" max="100" step="5" />
+          <span class="progress-value">{{ form.progress }}%</span>
+        </div>
       </div>
 
       <div class="field">
@@ -144,8 +169,13 @@ const occ = props.editOccurrence
 
 const form = reactive({
   title: occ?.title || '',
-  startDate: occ?.date || props.initialDate,
-  startTime: occ?.time || '',
+  receivedDate: occ?.date || props.initialDate,
+  receivedTime: occ?.receivedTime || '09:00',
+  taskStartDate: occ?.taskStartDate || props.initialDate,
+  taskStartTime: occ?.taskStartTime || '09:00',
+  taskEndDate: occ?.taskEndDate || '',
+  taskEndTime: occ?.taskEndTime || '',
+  progress: occ?.progress ?? 0,
   color: occ?.color || '#5B7FFF',
   recurrenceType: occ?.recurrence ? recurrenceTypeFromRule(occ.recurrence) : 'none',
   lunarMonth: occ?.recurrence?.lunarMonth || 1,
@@ -158,8 +188,13 @@ const form = reactive({
 function save() {
   const data: any = {
     title: form.title,
-    startDate: form.startDate,
-    startTime: form.startTime || undefined,
+    receivedDate: form.receivedDate,
+    receivedTime: form.receivedTime,
+    taskStartDate: form.taskStartDate,
+    taskStartTime: form.taskStartTime,
+    taskEndDate: form.taskEndDate || undefined,
+    taskEndTime: form.taskEndTime || undefined,
+    progress: form.progress,
     color: form.color,
     reminders: form.reminders
   }
@@ -180,7 +215,7 @@ function save() {
       data.recurrence.lunarMonth = form.lunarMonth
       data.recurrence.lunarDay = form.lunarDay
       data.lunarAnchor = {
-        year: parseInt(form.startDate.substring(0, 4)),
+        year: parseInt(form.receivedDate.substring(0, 4)),
         month: form.lunarMonth,
         day: form.lunarDay,
         isLeapMonth: form.lunarMonth < 0
@@ -223,7 +258,7 @@ function doDelete() {
   border-radius: var(--radius);
   border: 1px solid var(--color-border);
   padding: 20px;
-  width: 420px;
+  width: 500px;
   max-height: 90vh;
   overflow-y: auto;
 }
@@ -256,7 +291,31 @@ function doDelete() {
   outline: none;
 }
 
-.hint { font-size: 11px; color: var(--color-text-secondary); margin-left: 4px; }
+.datetime-row {
+  display: flex;
+  gap: 8px;
+}
+
+.datetime-row input[type="date"] { flex: 3; }
+.datetime-row input[type="time"] { flex: 2; }
+
+.progress-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.progress-row input[type="range"] {
+  flex: 1;
+  accent-color: var(--color-primary);
+}
+
+.progress-value {
+  font-size: 13px;
+  min-width: 36px;
+  color: var(--color-text-secondary);
+  text-align: right;
+}
 
 .color-picks {
   display: flex;

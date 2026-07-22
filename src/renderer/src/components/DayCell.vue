@@ -18,7 +18,9 @@
         class="occ-bar"
         :style="{ background: occ.color }"
       >
-        <span class="occ-text">{{ occ.time || '全天' }} {{ occ.title }}</span>
+        <span class="occ-text">{{ occ.title }}</span>
+        <span class="occ-progress">{{ occ.progress }}%</span>
+        <div class="progress-stripe" :style="{ width: (occ.progress || 0) + '%' }"></div>
       </div>
       <div v-if="overflowCount > 0" class="occ-overflow">+{{ overflowCount }}</div>
     </div>
@@ -96,11 +98,33 @@ const overflowCount = computed(() => props.occurrences.length - MAX_VISIBLE)
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
 
 .occ-text {
   color: #fff;
   font-size: 10px;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.occ-progress {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 9px;
+  flex-shrink: 0;
+}
+
+.progress-stripe {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.5);
+  transition: width 0.3s ease;
 }
 
 .occ-overflow {

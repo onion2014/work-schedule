@@ -50,15 +50,22 @@ export interface Reminder {
   snoozedUntil?: string
 }
 
-/** A calendar event (single or recurring) */
+/** A calendar event (single or recurring) — task tracking model */
 export interface CalendarEvent {
   id: string
   title: string
   description?: string
-  startDate: string // YYYY-MM-DD
-  startTime?: string // HH:mm (undefined = all-day)
-  endDate?: string // YYYY-MM-DD (for multi-day)
-  endTime?: string // HH:mm
+  // 需求接收时间 — determines which calendar day the event appears on
+  receivedDate: string // YYYY-MM-DD
+  receivedTime: string // HH:mm
+  // 任务开始时间 — when the task begins (reminders fire relative to this)
+  taskStartDate: string // YYYY-MM-DD
+  taskStartTime: string // HH:mm
+  // 任务结束时间 — when the task is due
+  taskEndDate: string // YYYY-MM-DD
+  taskEndTime: string // HH:mm
+  // 进度 0-100%
+  progress: number
   recurrence: RecurrenceRule | null
   lunarAnchor?: LunarAnchor
   reminders: Reminder[]
@@ -72,13 +79,16 @@ export interface CalendarEvent {
 /** An expanded occurrence of an event on a specific date */
 export interface Occurrence {
   eventId: string
-  date: string // YYYY-MM-DD
-  time?: string // HH:mm (undefined = all-day)
-  endDate?: string
-  endTime?: string
+  date: string // YYYY-MM-DD (receivedDate determines this)
+  receivedTime: string // HH:mm
+  taskStartDate: string // YYYY-MM-DD
+  taskStartTime: string // HH:mm
+  taskEndDate: string // YYYY-MM-DD
+  taskEndTime: string // HH:mm
+  progress: number // 0-100%
   title: string
   color: string
-  completed: boolean // whether this occurrence is marked as completed
+  completed: boolean // whether this occurrence is marked as completed (progress >= 100)
   recurrence?: RecurrenceRule | null
   reminders?: Reminder[]
   lunarDate?: LunarDisplay

@@ -29,7 +29,7 @@ let isPopupVisible = false
 let popupContentLoaded = false
 
 // Cached pending events (refreshed periodically and on window focus)
-let cachedPending: { time: string; title: string; color: string }[] = []
+let cachedPending: { time: string; title: string; color: string; progress: number }[] = []
 let lastCacheDate = ''
 
 // Normal tray icon (cached)
@@ -200,6 +200,21 @@ function ensurePopupWindow(): BrowserWindow {
     }
   })
 
+  // Intercept click-to-open navigation from the popup HTML.
+  // The popup template adds a click handler that navigates to
+  // 'command://open-app'; we intercept it here and open/focus
+  // the main calendar window instead.
+  popupWindow.webContents.on('will-navigate', (event, url) => {
+    if (url === 'command://open-app') {
+      event.preventDefault()
+      hidePopup()
+      stopFlashing()
+      if (!mainWindow) createMainWindow()
+      mainWindow?.show()
+      mainWindow?.focus()
+    }
+  })
+
   // Cursor entered the popup — cancel any pending hide so the popup
   // stays open while the user reads it (prevents hide-flicker when the
   // cursor travels from tray onto the popup).
@@ -259,6 +274,11 @@ function buildPopupTemplate(): string {
     border-radius: 8px;
     box-shadow: 0 2px 12px rgba(0,0,0,0.18), 0 0 1px rgba(0,0,0,0.1);
     background: #ffffff;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .popup:hover {
+    background: #f8f8f8;
   }
   .header {
     padding: 10px 14px 8px;
@@ -308,6 +328,11 @@ function buildPopupTemplate(): string {
     white-space: nowrap;
     flex: 1;
   }
+  .progress {
+    color: #888;
+    font-size: 10px;
+    flex-shrink: 0;
+  }
 </style>
 </head>
 <body>
@@ -325,6 +350,12 @@ function buildPopupTemplate(): string {
     document.getElementById('header-text').innerHTML = headerHtml;
     document.getElementById('items').innerHTML = itemsHtml;
   };
+  // Click anywhere on the popup → navigate to a command URL that the
+  // main process intercepts (will-navigate) to open the calendar window.
+  document.addEventListener('click', function (e) {
+    e.preventDefault();
+    window.location.href = 'command://open-app';
+  });
 </script>
 </body>
 </html>`
@@ -345,6 +376,7 @@ function buildPopupContent(): { headerHtml: string; itemsHtml: string } {
         `<span class="dot" style="background:${item.color}"></span>` +
         `<span class="time">${item.time}</span>` +
         `<span class="title">${item.title}</span>` +
+        `<span class="progress">${item.progress}%</span>` +
         '</div>'
     }
   }
@@ -457,21 +489,24 @@ function hidePopup(): void {
 // ===== Taskbar Title Scrolling =====
 
 /** Get today's uncompleted (pending) events, sorted by time */
-function getTodayPending(): { time: string; title: string; color: string }[] {
+function getTodayPending(): { time: string; title: string; color: string; progress: number }[] {
   const today = dayjs().format('YYYY-MM-DD')
   const range = { start: today, end: today }
   const rawEvents = queryAllEvents()
 
-  const pending: { time: string; title: string; color: string }[] = []
+  const pending: { time: string; title: string; color: string; progress: number }[] = []
 
   for (const raw of rawEvents) {
     const event: CalendarEvent = {
       id: raw.id,
       title: raw.title,
-      startDate: raw.startDate,
-      startTime: raw.startTime,
-      endDate: raw.endDate,
-      endTime: raw.endTime,
+      receivedDate: raw.receivedDate,
+      receivedTime: raw.receivedTime,
+      taskStartDate: raw.taskStartDate,
+      taskStartTime: raw.taskStartTime,
+      taskEndDate: raw.taskEndDate,
+      taskEndTime: raw.taskEndTime,
+      progress: raw.progress ?? 0,
       recurrence: raw.recurrence || null,
       lunarAnchor: raw.lunarAnchor || undefined,
       color: raw.color,
@@ -485,20 +520,17 @@ function getTodayPending(): { time: string; title: string; color: string }[] {
     for (const occ of occs) {
       if (!occ.completed && occ.date === today) {
         pending.push({
-          time: occ.time || '全天',
+          time: occ.taskStartTime,
           title: occ.title,
-          color: occ.color || raw.color || '#4A90D9'
+          color: occ.color || raw.color || '#4A90D9',
+          progress: occ.progress ?? 0
         })
       }
     }
   }
 
-  // Sort: 全天 first, then chronological
-  pending.sort((a, b) => {
-    if (a.time === '全天' && b.time !== '全天') return -1
-    if (a.time !== '全天' && b.time === '全天') return 1
-    return a.time.localeCompare(b.time)
-  })
+  // Sort by time chronologically
+  pending.sort((a, b) => a.time.localeCompare(b.time))
 
   return pending
 }
@@ -524,7 +556,7 @@ function todayLabel(): string {
 /**
  * Update the taskbar title with scrolling pending events.
  *
- * Pattern: "7/21周一 · 14:00 周一团队例会"
+ * Pattern: "7/21周一 · 14:00 周一团队例会 30%"
  * - Date prefix always visible
  * - Rotates through each pending item every 5s
  * - Shows summary count when cycling back
@@ -557,9 +589,9 @@ function updateTaskbarTitle(): void {
     // Summary: "7/21周一 · 待办3项"
     mainWindow.setTitle(`${label} · 待办${total}项`)
   } else {
-    // Single item: "7/21周一 · 14:00 周一团队例会"
+    // Single item: "7/21周一 · 14:00 周一团队例会 30%"
     const item = cachedPending[phase - 1]
-    mainWindow.setTitle(`${label} · ${item.time} ${item.title}`)
+    mainWindow.setTitle(`${label} · ${item.time} ${item.title} ${item.progress}%`)
   }
 
   scrollIndex++

@@ -38,7 +38,7 @@ const BACKUP_INTERVAL_MS = 24 * 60 * 60 * 1000   // 24 hours
 const INITIAL_BACKUP_DELAY_MS = 30_000             // 30 seconds after startup
 const RETRY_DELAY_MS = 3_600_000                   // 1 hour retry on failure
 const MAX_IMPORT_EVENTS = 10_000
-const JSON_EXPORT_VERSION = 1
+const JSON_EXPORT_VERSION = 2
 
 // ===== Tiered rotation config =====
 const DAILY_KEEP_DAYS = 7
@@ -360,10 +360,13 @@ export function exportToJson(): string {
     id: ev.id,
     title: ev.title,
     description: ev.description ?? null,
-    startDate: ev.startDate,
-    startTime: ev.startTime ?? null,
-    endDate: ev.endDate ?? null,
-    endTime: ev.endTime ?? null,
+    receivedDate: ev.receivedDate,
+    receivedTime: ev.receivedTime,
+    taskStartDate: ev.taskStartDate,
+    taskStartTime: ev.taskStartTime,
+    taskEndDate: ev.taskEndDate ?? null,
+    taskEndTime: ev.taskEndTime ?? null,
+    progress: ev.progress ?? 0,
     recurrence: ev.recurrence || null,
     lunarAnchor: ev.lunarAnchor || null,
     color: ev.color || '#4A90D9',
@@ -423,6 +426,25 @@ export function importFromJson(
     return { success: false, importedCount: 0, skippedCount: 0, errors: [`Too many events: ${data.events.length} (max: ${MAX_IMPORT_EVENTS})`] }
   }
 
+  // Normalize v1 (old format with startDate/startTime) to v2 (new format)
+  if (data.version === 1) {
+    for (const ev of data.events) {
+      if (ev.startDate && !ev.receivedDate) {
+        ev.receivedDate = ev.startDate
+        ev.receivedTime = ev.startTime || '09:00'
+        ev.taskStartDate = ev.startDate
+        ev.taskStartTime = ev.startTime || '09:00'
+        ev.taskEndDate = ev.endDate
+        ev.taskEndTime = ev.endTime
+        ev.progress = 0
+        delete ev.startDate
+        delete ev.startTime
+        delete ev.endDate
+        delete ev.endTime
+      }
+    }
+  }
+
   // 4. Validate each event
   const errors: string[] = []
   const seenIds = new Set<string>()
@@ -430,7 +452,7 @@ export function importFromJson(
     const ev = data.events[i]
     if (!ev.id) { errors.push(`Event #${i + 1}: missing id`); continue }
     if (!ev.title) { errors.push(`Event #${i + 1}: missing title`); continue }
-    if (!ev.startDate) { errors.push(`Event #${i + 1}: missing startDate`); continue }
+    if (!ev.receivedDate) { errors.push(`Event #${i + 1}: missing receivedDate`); continue }
     if (seenIds.has(ev.id)) { errors.push(`Event #${i + 1}: duplicate id "${ev.id}"`); continue }
     seenIds.add(ev.id)
   }
@@ -450,9 +472,10 @@ export function importFromJson(
   }
 
   const insertEvent = db.prepare(
-    `INSERT OR REPLACE INTO events (id, title, description, startDate, startTime, endDate, endTime,
-      recurrence, lunarAnchor, color, category, completedDates, createdAt, updatedAt)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT OR REPLACE INTO events (id, title, description, receivedDate, receivedTime,
+      taskStartDate, taskStartTime, taskEndDate, taskEndTime,
+      recurrence, lunarAnchor, color, category, completedDates, progress, createdAt, updatedAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
 
   const deleteReminders = db.prepare('DELETE FROM reminders WHERE eventId = ?')
@@ -476,15 +499,18 @@ export function importFromJson(
         ev.id,
         ev.title,
         ev.description ?? null,
-        ev.startDate,
-        ev.startTime ?? null,
-        ev.endDate ?? null,
-        ev.endTime ?? null,
+        ev.receivedDate,
+        ev.receivedTime,
+        ev.taskStartDate,
+        ev.taskStartTime,
+        ev.taskEndDate ?? null,
+        ev.taskEndTime ?? null,
         ev.recurrence ? JSON.stringify(ev.recurrence) : null,
         ev.lunarAnchor ? JSON.stringify(ev.lunarAnchor) : null,
         ev.color ?? '#4A90D9',
         ev.category ?? null,
         ev.completedDates ? JSON.stringify(ev.completedDates) : '[]',
+        ev.progress ?? 0,
         ev.createdAt ?? new Date().toISOString(),
         ev.updatedAt ?? new Date().toISOString()
       )
