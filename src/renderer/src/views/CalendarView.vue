@@ -450,14 +450,17 @@ const exportHtml = computed(() => {
     const dateStr = cur.format('YYYY-MM-DD')
     const lunar = exportLunar.value[dateStr]
     const lunarStr = lunar ? `${lunar.monthName}${lunar.dayName}` : ''
-    const dayLabel = `${cur.month() + 1}/${cur.date()}周${weekdayName(cur)} ${lunarStr}`
+    // const dayLabel = `${cur.month() + 1}/${cur.date()}周${weekdayName(cur)} ${lunarStr}`
+    const dayLabel = `${cur.month() + 1}/${cur.date()}周${weekdayName(cur)}`
     const occsForDay = exportOccs.value.filter(o => o.date === dateStr)
 
     for (const occ of occsForDay) {
       if (occ.completed) {
-        doneItems.push({ dayLabel, receivedTime: occ.receivedTime, taskStartTime: occ.taskStartTime, taskEndTime: occ.taskEndTime, title: occ.title, color: occ.color, progress: occ.progress })
+        // doneItems.push({ dayLabel, receivedTime: occ.receivedTime, taskStartTime: occ.taskStartTime, taskEndTime: occ.taskEndTime, title: occ.title, color: occ.color, progress: occ.progress })
+        doneItems.push({ dayLabel, title: occ.title, color: occ.color, progress: occ.progress })
       } else {
-        todoItems.push({ dayLabel, receivedTime: occ.receivedTime, taskStartTime: occ.taskStartTime, taskEndTime: occ.taskEndTime, title: occ.title, color: occ.color, progress: occ.progress })
+        // todoItems.push({ dayLabel, receivedTime: occ.receivedTime, taskStartTime: occ.taskStartTime, taskEndTime: occ.taskEndTime, title: occ.title, color: occ.color, progress: occ.progress })
+        todoItems.push({ dayLabel, title: occ.title, color: occ.color, progress: occ.progress })
       }
     }
     cur = cur.add(1, 'day')
@@ -469,7 +472,8 @@ const exportHtml = computed(() => {
   html += `<div class="ex-section"><div class="ex-section-title todo">待办 ${todoItems.length} 项</div>`
   if (todoItems.length) {
     html += todoItems.map((item, i) =>
-      `<div class="ex-row"><span class="ex-num">${i + 1}</span><span class="ex-dot" style="background:${item.color}"></span><span class="ex-day">${item.dayLabel}</span><span class="ex-received">接收${item.receivedTime}</span><span class="ex-task-start">开始${item.taskStartTime}</span><span class="ex-title">${item.title}</span><span class="ex-progress">${item.progress}%</span></div>`
+      // `<div class="ex-row"><span class="ex-num">${i + 1}</span><span class="ex-dot" style="background:${item.color}"></span><span class="ex-day">${item.dayLabel}</span><span class="ex-received">接收${item.receivedTime}</span><span class="ex-task-start">开始${item.taskStartTime}</span><span class="ex-title">${item.title}</span><span class="ex-progress">${item.progress}%</span></div>`
+       `<div class="ex-row"><span class="ex-num">${i + 1}</span><span class="ex-dot" style="background:${item.color}"></span><span class="ex-day">${item.dayLabel}</span><span class="ex-title">${item.title}</span><span class="ex-progress">${item.progress}%</span></div>`
     ).join('')
   } else {
     html += `<div class="ex-empty">无待办事项</div>`
@@ -479,7 +483,8 @@ const exportHtml = computed(() => {
   html += `<div class="ex-section"><div class="ex-section-title done">已办 ${doneItems.length} 项</div>`
   if (doneItems.length) {
     html += doneItems.map((item, i) =>
-      `<div class="ex-row done"><span class="ex-num">${i + 1}</span><span class="ex-dot" style="background:${item.color}"></span><span class="ex-day">${item.dayLabel}</span><span class="ex-received">接收${item.receivedTime}</span><span class="ex-task-start">开始${item.taskStartTime}</span><span class="ex-title">${item.title}</span><span class="ex-progress">${item.progress}%</span></div>`
+      // `<div class="ex-row done"><span class="ex-num">${i + 1}</span><span class="ex-dot" style="background:${item.color}"></span><span class="ex-day">${item.dayLabel}</span><span class="ex-received">接收${item.receivedTime}</span><span class="ex-task-start">开始${item.taskStartTime}</span><span class="ex-title">${item.title}</span><span class="ex-progress">${item.progress}%</span></div>`
+      `<div class="ex-row done"><span class="ex-num">${i + 1}</span><span class="ex-dot" style="background:${item.color}"></span><span class="ex-day">${item.dayLabel}</span><span class="ex-title">${item.title}</span><span class="ex-progress">${item.progress}%</span></div>`
     ).join('')
   } else {
     html += `<div class="ex-empty">无已办事项</div>`
